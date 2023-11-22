@@ -71,10 +71,10 @@ impl KaspadClient {
         let respone_stream = client.message_stream(request).await.unwrap();
 
         let respone_stream = respone_stream.into_inner();
-        let resp_sender_map = self.resp_channle_map;
-        tokio::spawn(async move {
-            Self::handle_resp_loop(& resp_sender_map, respone_stream);
-        });
+        // let resp_sender_map = self.resp_channle_map;
+        // tokio::spawn(async move {
+        //     Self::handle_resp_loop(& resp_sender_map, respone_stream);
+        // });
 
         Ok(())
     }
@@ -84,7 +84,7 @@ impl KaspadClient {
         mut stream: Streaming<KaspadResponse>,
     ) {
         while let Some(msg) = stream.message().await.unwrap() {
-            resp_sender.send(msg).await.unwrap();
+            // resp_sender.send(msg).await.unwrap();
         }
     }
 }
