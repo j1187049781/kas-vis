@@ -1,10 +1,18 @@
-use tokio::task;
-
+use std::sync::Arc;
+use kas_grpc::client;
+use kas_grpc::client::protos;
+use protos::GetBlockDagInfoRequestMessage;
+use protos::kaspad_request::Payload::GetBlockDagInfoRequest;
 #[tokio::main]
 async fn main() {
-    let v = vec![1, 2, 3];
-    
-    task::spawn(async move {
-        println!("Here's a vec: {:?}", v);
-    });
+    let c = client::KaspadClient::new(String::from("grpc://seeder2.kaspad.net:16110"));
+    let ac = Arc::new(c);
+    ac.clone().connect().await.unwrap();
+    let payload = GetBlockDagInfoRequest(GetBlockDagInfoRequestMessage {});
+    let resp = ac.clone().get(payload).await;
+    if let Ok(msg) = resp {
+        if let Some(payload) = msg.payload {
+            print!("payload: {payload:?}")
+        }
+    }
 }

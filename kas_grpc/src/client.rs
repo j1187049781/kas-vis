@@ -5,9 +5,9 @@ use protos::rpc_client::RpcClient;
 use protos::KaspadRequest;
 use protos::KaspadResponse;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::Arc;
 use std::sync::Mutex;
 use tonic::Streaming;
 
@@ -37,7 +37,7 @@ impl KaspadClient {
         };
     }
 
-    pub async fn get<T>(self: &mut Self, payload: Payload) -> Result<(), anyhow::Error> {
+    pub async fn get(self: Arc<Self>, payload: Payload) -> Result<KaspadResponse, anyhow::Error> {
         let req_id = self.req_id.fetch_add(1, Relaxed);
         let msg: KaspadRequest = KaspadRequest {
             id: req_id,
@@ -54,10 +54,16 @@ impl KaspadClient {
         self.req_sender.send(msg).await?;
         
         let ret = r.recv().await?;
-        Ok(())
+        
+        {
+            let mut  m = self.resp_channle_map.lock().unwrap();
+            m.remove(&req_id);
+        }
+
+        Ok(ret)
     }
 
-    pub async fn connect(self: &Self) -> Result<(), anyhow::Error> {
+    pub async fn connect(self:  Arc<Self>) -> Result<(), anyhow::Error> {
         let mut client = RpcClient::connect(self.host.clone()).await.unwrap();
 
         let r = self.req_receiver.clone();
@@ -71,20 +77,35 @@ impl KaspadClient {
         let respone_stream = client.message_stream(request).await.unwrap();
 
         let respone_stream = respone_stream.into_inner();
-        // let resp_sender_map = self.resp_channle_map;
-        // tokio::spawn(async move {
-        //     Self::handle_resp_loop(& resp_sender_map, respone_stream);
-        // });
+        tokio::spawn(async move {
+            self.handle_resp_loop(respone_stream).await;
+        });
 
         Ok(())
     }
 
-    async fn handle_resp_loop(
-        resp_sender_map: & Arc<Mutex<HashMap<u64, Sender<KaspadResponse>>>>,
+    async fn handle_resp_loop(self: Arc<Self>,
         mut stream: Streaming<KaspadResponse>,
     ) {
         while let Some(msg) = stream.message().await.unwrap() {
-            // resp_sender.send(msg).await.unwrap();
+            let req_id = msg.id;
+            {   
+                let mut s_opt =None;
+                {
+                    let m = self.resp_channle_map.lock().unwrap();
+                    if let Some(s) = m.get(&req_id){
+                        s_opt = Some(s.clone());
+                    }
+                }
+
+                if let Some(s) = s_opt {
+                    print!("receive {req_id} response");
+                    s.send(msg).await.unwrap();
+                }else {
+                    println!("receive unknown req id {req_id}");
+                }
+                
+            }
         }
     }
 }
